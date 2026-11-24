@@ -10,3 +10,9 @@ docs
 /web/node_modules
 /web/dist
 !THIRD-PARTY-LICENSES.md
+
+# Local development data and secrets must never enter the image build context.
+.local-tests
+.env
+.env.*
+!.env.example

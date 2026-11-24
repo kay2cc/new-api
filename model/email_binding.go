@@ -1,7 +1,9 @@
 package model
 
 import (
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -202,4 +204,10 @@ func validateEmailBindingAccountWithTx(tx *gorm.DB, identity AuthSessionIdentity
 		return ErrAccountBindingChanged
 	}
 	return nil
+}
+
+// EmailBindingDeliveryTag invalidates queued codes when a flow is consumed,
+// locked or resent. Only a digest of salted hashes is stored in the mail audit.
+func EmailBindingDeliveryTag(id int64, state EmailBindingState) string {
+	return fmt.Sprintf("binding:%d:%x", id, sha256.Sum256([]byte(state.NewCodeHash+":"+state.OldCodeHash)))
 }

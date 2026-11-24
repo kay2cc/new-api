@@ -81,7 +81,7 @@ func StartEmailBinding(identity AuthIdentity, authorization *model.AuthFlowAutho
 	if err != nil {
 		return nil, err
 	}
-	if err := sendEmailBindingCodes(lang, state, codes); err != nil {
+	if err := sendEmailBindingCodes(lang, state, codes, flow); err != nil {
 		// A partially delivered pair must not leave a usable change request.
 		_, _ = model.ConsumeAuthFlow(token, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeEmailBinding, UserId: identity.UserID, SessionId: identity.SessionID})
 		return nil, ErrEmailBindingDelivery
@@ -119,7 +119,7 @@ func ResendAccountEmailBinding(identity AuthIdentity, token string, lang string)
 	if err != nil {
 		return nil, err
 	}
-	if err := sendEmailBindingCodes(lang, *state, codes); err != nil {
+	if err := sendEmailBindingCodes(lang, *state, codes, flow); err != nil {
 		_, _ = model.ConsumeAuthFlow(token, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeEmailBinding, UserId: identity.UserID, SessionId: identity.SessionID})
 		return nil, ErrEmailBindingDelivery
 	}
@@ -178,14 +178,14 @@ func generateEmailBindingCodes(requireOld bool) (emailBindingCodes, error) {
 	return codes, nil
 }
 
-func sendEmailBindingCodes(lang string, state model.EmailBindingState, codes emailBindingCodes) error {
+func sendEmailBindingCodes(lang string, state model.EmailBindingState, codes emailBindingCodes, flow *model.AuthFlow) error {
 	subject := i18n.Translate(lang, i18n.MsgEmailBindingSubject, map[string]any{"SystemName": common.SystemName})
 	minutes := map[string]any{"Minutes": int(model.EmailBindingTTL / time.Minute)}
 	content := fmt.Sprintf("<p>%s</p><p>%s</p><p>%s</p>",
 		i18n.Translate(lang, i18n.MsgEmailBindingNewIntro),
 		i18n.Translate(lang, i18n.MsgEmailBindingCode, map[string]any{"Code": html.EscapeString(codes.New)}),
 		i18n.Translate(lang, i18n.MsgEmailBindingNewValidity, minutes))
-	if err := common.SendEmail(subject, state.Email, content); err != nil {
+	if err := common.SendEmailRequest(common.EmailDeliveryRequest{Subject: subject, Receiver: state.Email, Content: content, ExpiresAt: flow.ExpiresAt, ValidityTag: model.EmailBindingDeliveryTag(flow.Id, state)}); err != nil {
 		return err
 	}
 	if codes.Old != "" {
@@ -193,7 +193,7 @@ func sendEmailBindingCodes(lang string, state model.EmailBindingState, codes ema
 			i18n.Translate(lang, i18n.MsgEmailBindingOldIntro),
 			i18n.Translate(lang, i18n.MsgEmailBindingCode, map[string]any{"Code": html.EscapeString(codes.Old)}),
 			i18n.Translate(lang, i18n.MsgEmailBindingOldValidity, minutes))
-		return common.SendEmail(subject, state.CurrentEmail, content)
+		return common.SendEmailRequest(common.EmailDeliveryRequest{Subject: subject, Receiver: state.CurrentEmail, Content: content, ExpiresAt: flow.ExpiresAt, ValidityTag: model.EmailBindingDeliveryTag(flow.Id, state)})
 	}
 	return nil
 }

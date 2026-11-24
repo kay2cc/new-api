@@ -24,6 +24,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/pkg/maildelivery"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/pkg/wsmanager"
 	"github.com/QuantumNous/new-api/relay"
@@ -49,6 +50,9 @@ var buildFS embed.FS
 var indexPage []byte
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "mail" {
+		os.Exit(maildelivery.RunCLI(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		os.Exit(jsplugin.RunCLI(os.Args[2:], os.Stdout, os.Stderr))
 	}
@@ -64,6 +68,12 @@ func main() {
 		return
 	}
 
+	stopMail, err := maildelivery.Install(context.Background(), model.DB)
+	if err != nil {
+		common.FatalLog(err)
+		return
+	}
+
 	common.SysLog(common.LogText("New API %s started", common.Version))
 	if os.Getenv("GIN_MODE") != "debug" {
 		gin.SetMode(gin.ReleaseMode)
@@ -75,6 +85,7 @@ func main() {
 	kitutil.Debug.Store(common.DebugEnabled)
 
 	defer func() {
+		stopMail()
 		err := model.CloseDB()
 		if err != nil {
 			common.FatalLog(common.LogText("failed to close database: %s", err.Error()))

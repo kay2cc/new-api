@@ -75,7 +75,31 @@ func newSMTPClient(addr string) (*smtp.Client, error) {
 	return client, nil
 }
 
+// EmailDeliveryRequest carries the deadline and optional validity check for queued mail.
+type EmailDeliveryRequest struct {
+	Subject   string
+	Receiver  string
+	Content   string
+	ExpiresAt time.Time
+	// ValidityTag identifies the current challenge without persisting a usable code.
+	ValidityTag string
+}
+
+// EmailDeliveryHandler is installed once at startup, keeping common independent of model.
+var EmailDeliveryHandler func(EmailDeliveryRequest) error
+
 func SendEmail(subject string, receiver string, content string) error {
+	return SendEmailRequest(EmailDeliveryRequest{Subject: subject, Receiver: receiver, Content: content, ExpiresAt: time.Now().Add(24 * time.Hour)})
+}
+
+func SendEmailRequest(request EmailDeliveryRequest) error {
+	if EmailDeliveryHandler != nil {
+		return EmailDeliveryHandler(request)
+	}
+	return sendLegacyEmail(request.Subject, request.Receiver, request.Content)
+}
+
+func sendLegacyEmail(subject string, receiver string, content string) error {
 	OptionMapRWMutex.RLock()
 	provider := OptionMap["EmailProvider"]
 	resendKey := OptionMap["ResendApiKey"]

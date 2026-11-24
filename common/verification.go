@@ -9,8 +9,9 @@ import (
 )
 
 type verificationValue struct {
-	code string
-	time time.Time
+	code        string
+	time        time.Time
+	deliveryTag string
 }
 
 const (
@@ -36,8 +37,9 @@ func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	verificationMap[purpose+key] = verificationValue{
-		code: code,
-		time: time.Now(),
+		code:        code,
+		deliveryTag: uuid.NewString(),
+		time:        time.Now(),
 	}
 	if len(verificationMap) > verificationMapMaxSize {
 		removeExpiredPairs()
@@ -75,4 +77,28 @@ func init() {
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	verificationMap = make(map[string]verificationValue)
+}
+
+// SendVerificationEmail binds a queued task to the current in-memory challenge.
+// Replacing/consuming the code or restarting the owning process cancels retries.
+func SendVerificationEmail(subject, receiver, content, purpose, code string) error {
+	verificationMutex.Lock()
+	value, ok := verificationMap[purpose+receiver]
+	verificationMutex.Unlock()
+	if !ok || value.code != code || !time.Now().Before(value.time.Add(time.Duration(VerificationValidMinutes)*time.Minute)) {
+		return NewMessage("Invalid parameters")
+	}
+	return SendEmailRequest(EmailDeliveryRequest{Subject: subject, Receiver: receiver, Content: content,
+		ExpiresAt: value.time.Add(time.Duration(VerificationValidMinutes) * time.Minute), ValidityTag: value.deliveryTag})
+}
+
+func IsEmailVerificationCurrent(tag string) bool {
+	verificationMutex.Lock()
+	defer verificationMutex.Unlock()
+	for _, value := range verificationMap {
+		if value.deliveryTag == tag && time.Now().Before(value.time.Add(time.Duration(VerificationValidMinutes)*time.Minute)) {
+			return true
+		}
+	}
+	return false
 }
